@@ -8,6 +8,6 @@ namespace WpfApp1.Variables
     {
         private byte _endFooter01;
         private byte _endFooter02;
-        private UInt32 checkSum;
+        private UInt16 checkSum;
     }
 }

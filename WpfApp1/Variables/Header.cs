@@ -4,9 +4,9 @@ using System.Text;
 
 namespace WpfApp1.Variables
 {
-    internal class Header
+    public struct Header
     {
-        private byte _startHeader01;
-        private byte _startHeader02;
+        public byte startHeader01;
+        public byte startHeader02;
     }
 }

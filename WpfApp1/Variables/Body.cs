@@ -6,8 +6,8 @@ namespace WpfApp1.Variables
 {
     internal class Body
     {
-        private byte isHappy;
-        private UInt16 happyLevel;
+        private byte _isHappy;
+        private UInt16 _happyLevel;
 
     }
 }

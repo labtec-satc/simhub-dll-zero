@@ -38,3 +38,4 @@ C:\Users\Jhoni\source\repos\WpfApp1\WpfApp1\bin\Debug\net10.0-windows\runtimes\w
 C:\Users\Jhoni\source\repos\WpfApp1\WpfApp1\obj\Debug\net10.0-windows\WpfApp1.csproj.Up2Date
 C:\Users\Jhoni\source\repos\WpfApp1\WpfApp1\obj\Debug\net10.0-windows\mainWindow.baml
 C:\Users\Jhoni\source\repos\WpfApp1\WpfApp1\obj\Debug\net10.0-windows\mainWindow.g.cs
+C:\Users\Jhoni\source\repos\WpfApp1\WpfApp1\obj\Debug\net10.0-windows\WpfApp1.sourcelink.json

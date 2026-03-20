@@ -19,6 +19,10 @@ namespace WpfApp1
         private Border _floatingLabel = null;
         private SerialPort _serialPort = null;
         private bool _isConnected = false;
+        const byte header01 = 0x02;
+        const byte header02 = 0x03;
+        const byte footer01 = 0xAA;
+        const byte footer02 = 0x55;
 
         public MainWindow()
         {
@@ -238,21 +242,77 @@ namespace WpfApp1
         {
             if (_isConnected)
             {
+                _serialPort.DataReceived -= SerialPort_DataReceived; // Remove evento
                 _serialPort.Close();
                 _isConnected = false;
-                ButtonConnect.Content = "Conectar";
+                ButtonConnect.Content = "CONECTAR";
+                ButtonConnect.Background = new SolidColorBrush(Color.FromRgb(0, 122, 204));
             }
             else
             {
                 string selectedPort = ComboPorts.SelectedItem as string;
                 if (selectedPort != null && selectedPort.Contains("COM"))
                 {
-                    _serialPort = new SerialPort(selectedPort, 115200);
-                    _isConnected = true;
-                    _serialPort.Open();
-                    ButtonConnect.Content = "Desconectar";
+                    try
+                    {
+                        _serialPort = new SerialPort(selectedPort, 115200);
+                        _serialPort.DataReceived += SerialPort_DataReceived; // Adiciona evento
+                        _serialPort.Open();
+                        _isConnected = true;
+                        ButtonConnect.Content = "DESCONECTAR";
+                        ButtonConnect.Background = Brushes.DarkRed;
+                        TxtSerialLog.AppendText($"--- Conectado em {selectedPort} ---\n");
+                    }
+                    catch (Exception ex)
+                    {
+                        MessageBox.Show("Erro ao abrir porta: " + ex.Message);
+                    }
                 }
             }
+        }
+
+        private void SerialPort_DataReceived(object sender, SerialDataReceivedEventArgs e)
+        {
+            if (_serialPort.IsOpen)
+            {
+                try
+                {
+                    string data = _serialPort.ReadExisting();
+                    // Usar Dispatcher pois a leitura serial ocorre em outra thread
+                    Dispatcher.Invoke(() =>
+                    {
+                        TxtSerialLog.AppendText(data);
+                        if (TxtSerialLog.Text.Length > 5000) // Limpa o log se ficar muito grande
+                            TxtSerialLog.Text = TxtSerialLog.Text.Substring(2000);
+                        TxtSerialLog.ScrollToEnd();
+                    });
+                }
+                catch { }
+            }
+        }
+
+
+        unsafe public UInt16 checksumCalc(byte* data, int length)
+        {
+
+            UInt16 curr_crc = 0x0000;
+            byte sum1 = (byte)curr_crc;
+            byte sum2 = (byte)(curr_crc >> 8);
+            int index;
+            for (index = 0; index < length; index = index + 1)
+            {
+                int v = (sum1 + (*data));
+                sum1 = (byte)v;
+                sum1 = (byte)(v % 255);
+
+                int w = (sum1 + sum2) % 255;
+                sum2 = (byte)w;
+
+                data++;// = data++;
+            }
+
+            int x = (sum2 << 8) | sum1;
+            return (UInt16)x;
         }
     }
 }
