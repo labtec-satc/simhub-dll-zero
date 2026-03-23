@@ -279,11 +279,15 @@ namespace WpfApp1
         {
             ushort force = ushort.Parse(TxtForce.Text);
             ushort distance = ushort.Parse(TxtDistance.Text);
+            byte abs = 0;
+            if (ChkAbs.IsChecked == true) {
+                abs = 1;
+            }
 
             MyFirstVariable var = new MyFirstVariable
             {
                 header = new Header { startHeader01 = 0x02, startHeader02 = 0x03 },
-                body = new Body { force = force, distance = distance },
+                body = new Body { force = force, distance = distance, abs =  abs},
                 footer = new Footer { endFooter01 = 0xAA, endFooter02 = 0x55, checkSum = 0 }
             };
 
@@ -316,21 +320,44 @@ namespace WpfApp1
 
         private void SerialPort_DataReceived(object sender, SerialDataReceivedEventArgs e)
         {
-            if (_serialPort.IsOpen)
+            if (!_serialPort.IsOpen) return;
+
+            try
             {
-                try
+                int bytesToRead = _serialPort.BytesToRead;
+                byte[] buffer = new byte[bytesToRead];
+                _serialPort.Read(buffer, 0, bytesToRead);
+
+                string displayString = "";
+
+                foreach (byte b in buffer)
                 {
-                    string data = _serialPort.ReadExisting();
-                    // Usar Dispatcher pois a leitura serial ocorre em outra thread
-                    Dispatcher.Invoke(() =>
+                    // Se o byte for um caractere ASCII legível (espaço até o '~') ou controle comum (tab, nova linha)
+                    if ((b >= 32 && b <= 126) || b == 10 || b == 13 || b == 9)
                     {
-                        TxtSerialLog.AppendText(data);
-                        if (TxtSerialLog.Text.Length > 5000) // Limpa o log se ficar muito grande
-                            TxtSerialLog.Text = TxtSerialLog.Text.Substring(2000);
-                        TxtSerialLog.ScrollToEnd();
-                    });
+                        displayString += (char)b;
+                    }
+                    else
+                    {
+                        // Se for um byte binário (da struct), exibe em formato [0x00]
+                        displayString += $"[{b:X2}]";
+                    }
                 }
-                catch { }
+
+                Dispatcher.Invoke(() =>
+                {
+                    TxtSerialLog.AppendText(displayString);
+
+                    // Limpeza automática para não travar a interface
+                    if (TxtSerialLog.Text.Length > 10000)
+                        TxtSerialLog.Text = TxtSerialLog.Text.Substring(5000);
+
+                    TxtSerialLog.ScrollToEnd();
+                });
+            }
+            catch (Exception ex)
+            {
+                Dispatcher.Invoke(() => TxtSerialLog.AppendText($"\n[ERRO]: {ex.Message}\n"));
             }
         }
 

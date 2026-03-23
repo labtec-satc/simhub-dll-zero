@@ -10,6 +10,7 @@ namespace WpfApp1.Variables
     {
         public UInt16 force;
         public UInt16 distance;
+        public byte abs;
 
     }
 }
