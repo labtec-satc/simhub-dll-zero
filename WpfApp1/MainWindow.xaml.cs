@@ -2,12 +2,14 @@
 using System.Collections.Generic;
 using System.IO.Ports;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Shapes;
+using WpfApp1.Variables;
 
 namespace WpfApp1
 {
@@ -271,6 +273,47 @@ namespace WpfApp1
             }
         }
 
+
+
+        private unsafe void ButtonSendData_Click(object sender, RoutedEventArgs e)
+        {
+            ushort force = ushort.Parse(TxtForce.Text);
+            ushort distance = ushort.Parse(TxtDistance.Text);
+
+            MyFirstVariable var = new MyFirstVariable
+            {
+                header = new Header { startHeader01 = 0x02, startHeader02 = 0x03 },
+                body = new Body { force = force, distance = distance },
+                footer = new Footer { endFooter01 = 0xAA, endFooter02 = 0x55, checkSum = 0 }
+            };
+
+            // 1️⃣ Serializa SEM checksum
+            byte[] buffer = getBytes_Action(var);
+
+            // 2️⃣ Calcula checksum
+            ushort checksum;
+            fixed (byte* p = buffer)
+            {
+                checksum = checksumCalc(p, buffer.Length - sizeof(ushort));
+            }
+
+            // 3️⃣ Atualiza struct
+            var.footer.checkSum = checksum;
+
+            // 4️⃣ Serializa DE NOVO (AGORA CORRETO)
+            buffer = getBytes_Action(var);
+
+            if (!_serialPort.IsOpen)
+            {
+                MessageBox.Show("Porta não está aberta!");
+                return;
+            }
+
+            _serialPort.Write(buffer, 0, buffer.Length);
+
+            MessageBox.Show($"Enviado {buffer.Length} bytes");
+        }
+
         private void SerialPort_DataReceived(object sender, SerialDataReceivedEventArgs e)
         {
             if (_serialPort.IsOpen)
@@ -289,6 +332,19 @@ namespace WpfApp1
                 }
                 catch { }
             }
+        }
+
+        public byte[] getBytes_Action(MyFirstVariable aux)
+        {
+            int length = Marshal.SizeOf(aux);
+            IntPtr ptr = Marshal.AllocHGlobal(length);
+            byte[] myBuffer = new byte[length];
+
+            Marshal.StructureToPtr(aux, ptr, true);
+            Marshal.Copy(ptr, myBuffer, 0, length);
+            Marshal.FreeHGlobal(ptr);
+
+            return myBuffer;
         }
 
 

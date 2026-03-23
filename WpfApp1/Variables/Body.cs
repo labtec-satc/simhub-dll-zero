@@ -1,13 +1,15 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Runtime.InteropServices;
 using System.Text;
 
 namespace WpfApp1.Variables
 {
-    internal class Body
+    [StructLayout(LayoutKind.Sequential, Pack = 1)]
+    public struct Body
     {
-        private byte _isHappy;
-        private UInt16 _happyLevel;
+        public UInt16 force;
+        public UInt16 distance;
 
     }
 }
