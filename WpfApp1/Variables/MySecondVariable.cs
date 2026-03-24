@@ -6,10 +6,10 @@ using System.Text;
 namespace WpfApp1.Variables
 {
     [StructLayout(LayoutKind.Sequential, Pack = 1)]
-    public struct Header
+    public struct MySecondVariable
     {
-        public byte startHeader01;
-        public byte startHeader02;
-        public byte type;
+        public Header header;
+        public Body2 body;
+        public Footer footer;
     }
 }

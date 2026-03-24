@@ -10,6 +10,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Shapes;
 using WpfApp1.Variables;
+using static System.Net.Mime.MediaTypeNames;
 
 namespace WpfApp1
 {
@@ -20,6 +21,7 @@ namespace WpfApp1
         private Canvas _activeCanvas = null;
         private Border _floatingLabel = null;
         private SerialPort _serialPort = null;
+        private List<byte> _receiveBuffer = new List<byte>();
         private bool _isConnected = false;
         const byte header01 = 0x02;
         const byte header02 = 0x03;
@@ -260,6 +262,8 @@ namespace WpfApp1
                         _serialPort = new SerialPort(selectedPort, 115200);
                         _serialPort.DataReceived += SerialPort_DataReceived; // Adiciona evento
                         _serialPort.Open();
+                        _serialPort.DiscardInBuffer();
+                        _serialPort.DiscardOutBuffer();
                         _isConnected = true;
                         ButtonConnect.Content = "DESCONECTAR";
                         ButtonConnect.Background = Brushes.DarkRed;
@@ -286,7 +290,7 @@ namespace WpfApp1
 
             MyFirstVariable var = new MyFirstVariable
             {
-                header = new Header { startHeader01 = 0x02, startHeader02 = 0x03 },
+                header = new Header { startHeader01 = 0x02, startHeader02 = 0x03, type = 0 },
                 body = new Body { force = force, distance = distance, abs =  abs},
                 footer = new Footer { endFooter01 = 0xAA, endFooter02 = 0x55, checkSum = 0 }
             };
@@ -328,32 +332,12 @@ namespace WpfApp1
                 byte[] buffer = new byte[bytesToRead];
                 _serialPort.Read(buffer, 0, bytesToRead);
 
-                string displayString = "";
-
-                foreach (byte b in buffer)
+                lock (_receiveBuffer)
                 {
-                    // Se o byte for um caractere ASCII legível (espaço até o '~') ou controle comum (tab, nova linha)
-                    if ((b >= 32 && b <= 126) || b == 10 || b == 13 || b == 9)
-                    {
-                        displayString += (char)b;
-                    }
-                    else
-                    {
-                        // Se for um byte binário (da struct), exibe em formato [0x00]
-                        displayString += $"[{b:X2}]";
-                    }
+                    _receiveBuffer.AddRange(buffer);
                 }
-
-                Dispatcher.Invoke(() =>
-                {
-                    TxtSerialLog.AppendText(displayString);
-
-                    // Limpeza automática para não travar a interface
-                    if (TxtSerialLog.Text.Length > 10000)
-                        TxtSerialLog.Text = TxtSerialLog.Text.Substring(5000);
-
-                    TxtSerialLog.ScrollToEnd();
-                });
+                ProcessBuffer();
+                
             }
             catch (Exception ex)
             {
@@ -361,6 +345,92 @@ namespace WpfApp1
             }
         }
 
+        public unsafe void ProcessBuffer()
+        {
+            lock (_receiveBuffer)
+            {
+                int bufferIndex = 0;
+                int secondVariableSize = Marshal.SizeOf<MySecondVariable>();
+                while (bufferIndex < _receiveBuffer.Count)
+                {
+                    if (bufferIndex + secondVariableSize > _receiveBuffer.Count || _receiveBuffer[bufferIndex] != header01)
+                    {
+                        int start = bufferIndex;
+                        while (bufferIndex < _receiveBuffer.Count)
+                        {
+                            if (_receiveBuffer[bufferIndex] == header01 && bufferIndex + secondVariableSize < _receiveBuffer.Count) break;
+                            bufferIndex++;
+                        }
+
+
+                        byte[] textByte = _receiveBuffer.Skip(start).Take(bufferIndex - start).ToArray();
+                        string text = System.Text.Encoding.ASCII.GetString(textByte);
+                        Dispatcher.Invoke(() =>
+                        {
+                            TxtSerialLog.AppendText(text);
+                            TxtSerialLog.ScrollToEnd();
+                        });
+
+                    } else
+                    {
+                        if (_receiveBuffer[bufferIndex + 1] != header02 || _receiveBuffer[bufferIndex + 2] != 1) 
+                        {
+                            bufferIndex++;
+                            continue;
+                        }
+
+                        byte[] packet = _receiveBuffer.Skip(bufferIndex).Take(secondVariableSize).ToArray();
+                        if (ValidateChecksum(packet))
+                        {
+                            bufferIndex += secondVariableSize;
+                            var data = ByteArrayToStruct<MySecondVariable>(packet);
+                            Dispatcher.Invoke(() =>
+                            {
+                                TxtSerialLog.AppendText($"\n[RECEBIDO] {data.body.randomNumber}\n");
+                                TxtSerialLog.ScrollToEnd();
+                            });
+                        }
+                        else
+                        {
+                            bufferIndex++;
+                        }
+
+                    }
+                }
+                if (bufferIndex > 0)
+                {
+                    _receiveBuffer.RemoveRange(0, bufferIndex);
+                }
+            } 
+        }
+
+        public T ByteArrayToStruct<T>(byte[] data) where T : struct
+        {
+            GCHandle handle = GCHandle.Alloc(data, GCHandleType.Pinned);
+            try
+            {
+                return Marshal.PtrToStructure<T>(handle.AddrOfPinnedObject());
+            }
+            finally
+            {
+                handle.Free();
+            }
+        }
+
+        private bool ValidateChecksum(byte[] data)
+        {
+            // últimos 2 bytes = checksum recebido
+            ushort receivedChecksum = BitConverter.ToUInt16(data, data.Length - 2);
+
+            unsafe
+            {
+                fixed (byte* ptr = data)
+                {
+                    ushort calculatedChecksum = checksumCalc(ptr, data.Length - 2);
+                    return receivedChecksum == calculatedChecksum;
+                }
+            }
+        }
         public byte[] getBytes_Action(MyFirstVariable aux)
         {
             int length = Marshal.SizeOf(aux);
@@ -373,6 +443,7 @@ namespace WpfApp1
 
             return myBuffer;
         }
+
 
 
         unsafe public UInt16 checksumCalc(byte* data, int length)
