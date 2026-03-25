@@ -318,8 +318,6 @@ namespace WpfApp1
             }
 
             _serialPort.Write(buffer, 0, buffer.Length);
-
-            MessageBox.Show($"Enviado {buffer.Length} bytes");
         }
 
         private void SerialPort_DataReceived(object sender, SerialDataReceivedEventArgs e)
@@ -351,6 +349,7 @@ namespace WpfApp1
             {
                 int bufferIndex = 0;
                 int secondVariableSize = Marshal.SizeOf<MySecondVariable>();
+                int loadcellValuesSize = Marshal.SizeOf<LoadcellValues>();
                 while (bufferIndex < _receiveBuffer.Count)
                 {
                     if (bufferIndex + secondVariableSize > _receiveBuffer.Count || _receiveBuffer[bufferIndex] != header01)
@@ -358,7 +357,7 @@ namespace WpfApp1
                         int start = bufferIndex;
                         while (bufferIndex < _receiveBuffer.Count)
                         {
-                            if (_receiveBuffer[bufferIndex] == header01 && bufferIndex + secondVariableSize < _receiveBuffer.Count) break;
+                            if (_receiveBuffer[bufferIndex] == header01 && bufferIndex + 2 < _receiveBuffer.Count) break;
                             bufferIndex++;
                         }
 
@@ -373,22 +372,49 @@ namespace WpfApp1
 
                     } else
                     {
-                        if (_receiveBuffer[bufferIndex + 1] != header02 || _receiveBuffer[bufferIndex + 2] != 1) 
+                        if (_receiveBuffer[bufferIndex + 1] != header02) 
                         {
                             bufferIndex++;
                             continue;
                         }
 
-                        byte[] packet = _receiveBuffer.Skip(bufferIndex).Take(secondVariableSize).ToArray();
+                        byte type = _receiveBuffer[bufferIndex + 2];
+
+                        if (type != 1 && type != 2) 
+                        {
+                            bufferIndex++;
+                            continue;
+                        }
+
+                       int sizeVariable = type == 1 ? secondVariableSize : loadcellValuesSize;
+                       
+                        if (bufferIndex + sizeVariable > _receiveBuffer.Count) break; 
+
+                        byte[] packet = _receiveBuffer.Skip(bufferIndex).Take(sizeVariable).ToArray();
                         if (ValidateChecksum(packet))
                         {
-                            bufferIndex += secondVariableSize;
-                            var data = ByteArrayToStruct<MySecondVariable>(packet);
-                            Dispatcher.Invoke(() =>
+                            bufferIndex += sizeVariable;
+                            if (type == 1)
                             {
-                                TxtSerialLog.AppendText($"\n[RECEBIDO] {data.body.randomNumber}\n");
-                                TxtSerialLog.ScrollToEnd();
-                            });
+                                var data = ByteArrayToStruct<MySecondVariable>(packet);
+                                Dispatcher.Invoke(() =>
+                                {
+                                    TxtSerialLog.AppendText($"\n[RECEBIDO] {data.body.randomNumber}\n");
+                                    TxtSerialLog.ScrollToEnd();
+                                });
+                            } else
+                            {
+                                var data = ByteArrayToStruct<LoadcellValues>(packet);
+                                Dispatcher.Invoke(() =>
+                                {
+                                    UpdateIndicator(EllAccel, TxtAccelPerc, data.body.throttleForce);
+                                    UpdateIndicator(EllBrake, TxtBrakePerc, data.body.brakeForce);
+                                    UpdateIndicator(EllClutch, TxtClutchPerc, data.body.clutchForce);
+                                    UpdateIndicator(EllHand, TxtHandPerc, data.body.handbrakeForce);
+                                    TxtSerialLog.AppendText($"\n[RECEBIDO] Freio de mão {data.body.handbrakeForce}\n[RECEBIDO] Freio  {data.body.brakeForce}\n[RECEBIDO] Acelerador {data.body.throttleForce}\n[RECEBIDO] Embreagem {data.body.clutchForce}\n");
+                                    TxtSerialLog.ScrollToEnd();
+                                });
+                            }
                         }
                         else
                         {
@@ -467,6 +493,18 @@ namespace WpfApp1
 
             int x = (sum2 << 8) | sum1;
             return (UInt16)x;
+        }
+
+        private void UpdateIndicator(Ellipse ellipse, TextBlock text, int percent)
+        {
+            // Atualiza texto
+            text.Text = $"{percent}%";
+
+            // Atualiza "preenchimento" (usando opacidade)
+            ellipse.Opacity = percent / 100.0;
+
+            // 🔥 EXTRA: efeito visual mais bonito (tipo força)
+            ellipse.StrokeThickness = 8 + (percent * 0.1);
         }
     }
 }
