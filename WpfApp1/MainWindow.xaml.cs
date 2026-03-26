@@ -72,7 +72,7 @@ namespace WpfApp1
             // 1. ADICIONANDO O TÍTULO (Faltava aqui!)
             TextBlock txtTitle = new TextBlock
             {
-                Text = container.Tag.ToString(),
+                Text = "Pedal",
                 Foreground = color,
                 FontSize = 14,
                 FontWeight = FontWeights.Bold,
@@ -259,7 +259,7 @@ namespace WpfApp1
                 {
                     try
                     {
-                        _serialPort = new SerialPort(selectedPort, 115200);
+                        _serialPort = new SerialPort(selectedPort, 3000000);
                         _serialPort.DataReceived += SerialPort_DataReceived; // Adiciona evento
                         _serialPort.Open();
                         _serialPort.DiscardInBuffer();
@@ -268,6 +268,7 @@ namespace WpfApp1
                         ButtonConnect.Content = "DESCONECTAR";
                         ButtonConnect.Background = Brushes.DarkRed;
                         TxtSerialLog.AppendText($"--- Conectado em {selectedPort} ---\n");
+                        Recover();
                     }
                     catch (Exception ex)
                     {
@@ -281,8 +282,8 @@ namespace WpfApp1
 
         private unsafe void ButtonSendData_Click(object sender, RoutedEventArgs e)
         {
-            ushort force = ushort.Parse(TxtForce.Text);
-            ushort distance = ushort.Parse(TxtDistance.Text);
+            ushort force = Convert.ToUInt16(SliderForce.Value);
+            ushort distance = Convert.ToUInt16(SliderDistance.Value);
             byte abs = 0;
             if (ChkAbs.IsChecked == true) {
                 abs = 1;
@@ -292,6 +293,45 @@ namespace WpfApp1
             {
                 header = new Header { startHeader01 = 0x02, startHeader02 = 0x03, type = 0 },
                 body = new Body { force = force, distance = distance, abs =  abs},
+                footer = new Footer { endFooter01 = 0xAA, endFooter02 = 0x55, checkSum = 0 }
+            };
+
+            // 1️⃣ Serializa SEM checksum
+            byte[] buffer = getBytes_Variable(var);
+
+            // 2️⃣ Calcula checksum
+            ushort checksum;
+            fixed (byte* p = buffer)
+            {
+                checksum = checksumCalc(p, buffer.Length - sizeof(ushort));
+            }
+
+            // 3️⃣ Atualiza struct
+            var.footer.checkSum = checksum;
+
+            // 4️⃣ Serializa DE NOVO (AGORA CORRETO)
+            buffer = getBytes_Variable(var);
+
+            if (!_serialPort.IsOpen)
+            {
+                MessageBox.Show("Porta não está aberta!");
+                return;
+            }
+
+            _serialPort.Write(buffer, 0, buffer.Length);
+        }
+
+        private unsafe void ButtonRecover_Click(object sender, RoutedEventArgs e)
+        {
+            Recover();
+        }
+
+        public unsafe void Recover()
+        {
+            Actions var = new Actions
+            {
+                header = new Header { startHeader01 = 0x02, startHeader02 = 0x03, type = 3 },
+                body = new ActionsBody { sendConfiguration = 1 },
                 footer = new Footer { endFooter01 = 0xAA, endFooter02 = 0x55, checkSum = 0 }
             };
 
@@ -348,6 +388,7 @@ namespace WpfApp1
             lock (_receiveBuffer)
             {
                 int bufferIndex = 0;
+                int firstVariableSize = Marshal.SizeOf<MyFirstVariable>();
                 int secondVariableSize = Marshal.SizeOf<MySecondVariable>();
                 int loadcellValuesSize = Marshal.SizeOf<LoadcellValues>();
                 while (bufferIndex < _receiveBuffer.Count)
@@ -380,21 +421,47 @@ namespace WpfApp1
 
                         byte type = _receiveBuffer[bufferIndex + 2];
 
-                        if (type != 1 && type != 2) 
+                        if (type  < 0 || type > 2) 
                         {
                             bufferIndex++;
                             continue;
                         }
 
-                       int sizeVariable = type == 1 ? secondVariableSize : loadcellValuesSize;
-                       
+                        int sizeVariable;
+
+                        switch (type)
+                        {
+                            case 0: sizeVariable = firstVariableSize; break;
+                            case 1: sizeVariable = secondVariableSize; break;
+                            case 2: sizeVariable = loadcellValuesSize; break;
+                            default: sizeVariable = 0; break;
+                        }
+
                         if (bufferIndex + sizeVariable > _receiveBuffer.Count) break; 
 
                         byte[] packet = _receiveBuffer.Skip(bufferIndex).Take(sizeVariable).ToArray();
                         if (ValidateChecksum(packet))
                         {
                             bufferIndex += sizeVariable;
-                            if (type == 1)
+                            if (type == 0)
+                            {
+                                var data = ByteArrayToStruct<MyFirstVariable>(packet);
+                                Dispatcher.Invoke(() =>
+                                {
+                                    TxtCurrForce.Text = $"{data.body.force}";
+                                    SliderForce.Value = data.body.force;
+                                    TxtCurrDistance.Text = $"{data.body.distance}";
+                                    SliderDistance.Value = data.body.distance;
+                                    if (data.body.abs == 1) {
+                                        TxtAbsStatus.Text = "ON";
+                                        ChkAbs.IsChecked = true;
+                                    } else
+                                    {
+                                        TxtAbsStatus.Text = "OFF";
+                                        ChkAbs.IsChecked = false;
+                                    }
+                                });
+                            } else if (type == 1)
                             {
                                 var data = ByteArrayToStruct<MySecondVariable>(packet);
                                 Dispatcher.Invoke(() =>
@@ -457,7 +524,20 @@ namespace WpfApp1
                 }
             }
         }
-        public byte[] getBytes_Action(MyFirstVariable aux)
+        public byte[] getBytes_Variable(MyFirstVariable aux)
+        {
+            int length = Marshal.SizeOf(aux);
+            IntPtr ptr = Marshal.AllocHGlobal(length);
+            byte[] myBuffer = new byte[length];
+
+            Marshal.StructureToPtr(aux, ptr, true);
+            Marshal.Copy(ptr, myBuffer, 0, length);
+            Marshal.FreeHGlobal(ptr);
+
+            return myBuffer;
+        }
+
+        public byte[] getBytes_Action(Actions aux)
         {
             int length = Marshal.SizeOf(aux);
             IntPtr ptr = Marshal.AllocHGlobal(length);
