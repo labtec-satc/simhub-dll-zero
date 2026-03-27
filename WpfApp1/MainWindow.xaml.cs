@@ -379,7 +379,7 @@ namespace WpfApp1
             }
             catch (Exception ex)
             {
-                Dispatcher.Invoke(() => TxtSerialLog.AppendText($"\n[ERRO]: {ex.Message}\n"));
+                Dispatcher.BeginInvoke(() => TxtSerialLog.AppendText($"\n[ERRO]: {ex.Message}\n"));
             }
         }
 
@@ -405,7 +405,7 @@ namespace WpfApp1
 
                         byte[] textByte = _receiveBuffer.Skip(start).Take(bufferIndex - start).ToArray();
                         string text = System.Text.Encoding.ASCII.GetString(textByte);
-                        Dispatcher.Invoke(() =>
+                        Dispatcher.BeginInvoke(() =>
                         {
                             TxtSerialLog.AppendText(text);
                             TxtSerialLog.ScrollToEnd();
@@ -446,7 +446,7 @@ namespace WpfApp1
                             if (type == 0)
                             {
                                 var data = ByteArrayToStruct<MyFirstVariable>(packet);
-                                Dispatcher.Invoke(() =>
+                                Dispatcher.BeginInvoke(() =>
                                 {
                                     TxtCurrForce.Text = $"{data.body.force}";
                                     SliderForce.Value = data.body.force;
@@ -464,7 +464,7 @@ namespace WpfApp1
                             } else if (type == 1)
                             {
                                 var data = ByteArrayToStruct<MySecondVariable>(packet);
-                                Dispatcher.Invoke(() =>
+                                Dispatcher.BeginInvoke(() =>
                                 {
                                     TxtSerialLog.AppendText($"\n[RECEBIDO] {data.body.randomNumber}\n");
                                     TxtSerialLog.ScrollToEnd();
@@ -472,14 +472,12 @@ namespace WpfApp1
                             } else
                             {
                                 var data = ByteArrayToStruct<LoadcellValues>(packet);
-                                Dispatcher.Invoke(() =>
+                                Dispatcher.BeginInvoke(() =>
                                 {
                                     UpdateIndicator(EllAccel, TxtAccelPerc, data.body.throttleForce);
                                     UpdateIndicator(EllBrake, TxtBrakePerc, data.body.brakeForce);
                                     UpdateIndicator(EllClutch, TxtClutchPerc, data.body.clutchForce);
-                                    UpdateIndicator(EllHand, TxtHandPerc, data.body.handbrakeForce);
-                                    TxtSerialLog.AppendText($"\n[RECEBIDO] Freio de mão {data.body.handbrakeForce}\n[RECEBIDO] Freio  {data.body.brakeForce}\n[RECEBIDO] Acelerador {data.body.throttleForce}\n[RECEBIDO] Embreagem {data.body.clutchForce}\n");
-                                    TxtSerialLog.ScrollToEnd();
+                                    UpdateIndicator(EllHand, TxtHandPerc, data.body.handbrakeForce);  
                                 });
                             }
                         }
